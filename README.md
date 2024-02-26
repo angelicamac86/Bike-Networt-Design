@@ -1,6 +1,6 @@
 # Bike-Networt-Design for Flat cities
 Models to bike network design
-TRAVEL DEMAND DISTRIBUTIONS
+% TRAVEL DEMAND DISTRIBUTIONS
 x=-20:1:19
 y=-20:1:19
 Distrib0=zeros (40,40)
@@ -17,7 +17,8 @@ end
  Bd=Distrib1; % destinations users B
  Co=Distrib1; % origins users C
  Cd=Distrib1; % destinations users C
-INPUTS
+
+%INPUTS
      Dx = 15;
      Dy = 8;
      alpha = 0.7;
@@ -43,7 +44,8 @@ INPUTS
      Deltay = Dy / 40;
      C=2100; 
      ixe=1; %si ixe=1 hay backtracking     
-SERVICE AREA DEFINITION
+     
+% SERVICE AREA DEFINITION
 
      dx_in = Dx * alpha;
      dy_in = Dy * alpha;
@@ -66,7 +68,8 @@ SERVICE AREA DEFINITION
      bx = (nx_in + nx_out) * deltax + kx * 0.5 * deltax;
      ay = ny_out * Deltay + ky * 0.5 * Deltay;
      by = (ny_in + ny_out) * Deltay + ky * 0.5 * Deltay; 
-INITIALIZATION OF TERMS THAT DO NOT DEPEND ON THE DECISION VARIABLES
+     
+% INITIALIZATION OF TERMS THAT DO NOT DEPEND ON THE DECISION VARIABLES
       g_aVxpos=zeros (40,40);
       g_aVxneg=zeros (40,40);
       g_bVxpos=zeros (40,40);
@@ -107,7 +110,8 @@ INITIALIZATION OF TERMS THAT DO NOT DEPEND ON THE DECISION VARIABLES
       fb_out=fb_out. *deltax*Deltay
       fb_in= Bd. *sum (Bo, 'all')
       fb_in=fb_in. *deltax*Deltay
-FLOW CALCULATIONS
+      
+% FLOW CALCULATIONS
   
   for i=1:40
     for j=1:40    
@@ -309,7 +313,8 @@ FLOW CALCULATIONS
      Apax=sum (Adem,'all') %numero de viajes de tipo A
      Bpax=sum (Bdem,'all') %numero de viajes de tipo B
      Cpax=sum (Cdem,'all') %numero de viajes de tipo C
-OBJECTIVE FUNCTION CALCULATION
+     
+% OBJECTIVE FUNCTION CALCULATION
 
   for i=1:40
       i
@@ -519,7 +524,8 @@ OBJECTIVE FUNCTION CALCULATION
           qxnegdef  
           qyposdef 
           qynegdef
-DISCRETIZATION OF THE NETWORK IN CORRIDORS
+          
+% DISCRETIZATION OF THE NETWORK IN CORRIDORS
  
 % horizontal axes lower quadrant
  yd_inf=zeros (20,300);  
