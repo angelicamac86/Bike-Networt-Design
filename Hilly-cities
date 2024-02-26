@@ -1,1 +1,1731 @@
+Hilly cities
+
+x=-20:1:19;
+y=-20:1:19;
+Distrib0=zeros(40,40);
+Distrib1(1:40,1:40)= .25; % (f=*.4330129 = 30k) (f=*.30619101 = 15k)   
+Distrib2=readmatrix('Demandas_UIO_17012024.xlsx','sheet','UIO.GEN','Range','B111:AO150'); %matriz de viajes generados Quito (f=*.707111 = 15k)
+Distrib3=readmatrix('Demandas_UIO_17012024.xlsx','sheet','UIO.ATR','Range','B91:AO130'); %matriz de viajes atraidos Quito (f=*.707111 = 15k)
+
+for i=1:40
+    for j=1:40
+        Distrib4(i,j)=max(0.5,0.3-6*x(i).*x(i)/60+y(j).*y(j)/60); % commuter city (f=*.11820184005 = 30k, f=*.083581801 15k)     
+    end
+end
+Distrib2;
+Distrib4;
+
+
+% TOPOGRAFÍAS
+
+Topouio=readmatrix('Demandas_UIO_17012024.xlsx','sheet','Heights','Range','b2:ao41'); %Matriz topografía Quito
+Topo2=readmatrix('monticulo_2024.xlsx','sheet','Topo2','Range','A1:AN40'); %matriz topografía azteca
+Topo4=readmatrix('monticulo_2024.xlsx','sheet','Topo4','Range','A1:AN40'); %matriz topografía montjuic
+TopoFlat=readmatrix('monticulo_2024.xlsx','sheet','TopoFlat','Range','A1:AN40'); 
+
+
+Ao=Distrib2*.707111;  %origenes pasajeros tipo A
+Ad=Distrib3*.707111;  %destinos pasajeros tipo A
+Bo=Distrib2*.707111;  %origenes pasajeros tipo B
+Bd=Distrib3*.707111;  %destinos pasajeros tipo B
+
+Ao;
+Bo;
+
+     Adem= Ao.*sum(Ad, 'all');
+     Bdem= Bo.*sum(Bd, 'all');
+     Apax=sum(Adem,'all')%numero de viajes de tipo A
+     Bpax=sum(Bdem,'all')%numero de viajes de tipo B
+
+
+
+     Dx = 10;
+     Dy = 4;
+     deltax = Dx / 40;
+     Deltay = Dy / 40;
+     vb1 = 10; % speed in shared spaces
+     vb2 = 21.6; % mean speed in flat terrain (Parkin, 2010)
+     Vot = 2.78; % valor del tiempo Ecuador
+     taux=0/3600; % tiempo de espera en semáforos
+     horizon=3;
+     tauy=0/3600; % tiempo de espera en semáforos
+     
+     Cl= 1.24; % 1.24 bike lane construction cost ----------------------------------
+     C= 2100; % 2,100 capacidad carriles bici --------------------
+     mu= 0.25; % 0.25 coeficiente rozamiento AASHTO (2012) -----------------------------------
+
+     ixe=0;  %si ixe=1 hay backtracking
+     masa=95; % kg masa del ciclista + bici mecánica (Parkin 2010)
+     gcons=9.807; % (m/s2) Aceleración debida a la gravedad 
+     deltav7= 10; % variación velocidad en relación de la gradiente 7% (v0-v7) v7= 11.6 km/h 
+     deltag7= 0.07; %gradiente 7%
+     gradmax_a=0.07; %gradiente máxima bici mecánica
+     gradmax_b=0.11; %gradiente máxima e-bike
+     deltav10= 17.3-10.12; % variación velocidad e-bike en relación de la gradiente 10% (v0-v10) v10= 10.12 km/h 
+     deltag10= 0.05; %gradiente 10%
+     Pmax= 200; % potencia máxima motor W (Sousa 2017)
+     Pmin=97; 
+     velgrad3=17.3;
+     deltav3=Pmax-Pmin;
+     deltag3=0.05-0.03;
+     eff=0.8; %eficiencia del motor (Sousa 2017)
+     vw=3; % walking speed in gradient (km/h)
+     
+     %empiezo a barrer cada cuadrado de demanda dx dy
+     
+
+     % definición area de servicio
+     nx = floor(Dx / deltax);
+     ny = floor(Dy / Deltay);
+
+  %% esto de kx no entiendo del todo bien
+
+     kx=0;
+     if nx == ceil(nx / 2) *2
+        %es par
+        kx = 0;
+     else
+        %es impar
+        kx = 1;
+     end 
+     
+        ky = 0;
+       
+
+    %inicialización de terminos que no dependen de las variables de decisión. Se calcularán una sola vez
+      WxposA=zeros(40, 40);
+      WxnegA=zeros(40, 40);
+      WyposA=zeros(40, 40);
+      WynegA=zeros(40, 40);
+      WxposB=zeros(40, 40);
+      WxnegB=zeros(40, 40);
+      WyposB=zeros(40, 40);
+      WynegB=zeros(40, 40);
+      TemxposA = zeros(40, 40);
+      TemxnegA = zeros(40, 40);
+      TemyposA = zeros(40, 40);
+      TemynegA = zeros(40, 40);
+      TemxposB = zeros(40, 40);
+      TemxnegB = zeros(40, 40);
+      TemyposB = zeros(40, 40);
+      TemynegB = zeros(40, 40);
+      grad1=zeros(40,40);
+      grad2=zeros(40,40);
+      grad3=zeros(40,40);
+      grad4=zeros(40,40);
+      q_axpos=zeros(40,40); 
+      q_aypos=zeros(40,40);
+      q_axneg=zeros(40,40);
+      q_ayneg=zeros(40,40);
+      q_bxpos=zeros(40,40);
+      q_bypos=zeros(40,40);
+      q_bxneg=zeros(40,40);
+      q_byneg=zeros(40,40);
+      fa= Ad.*sum(Ao, 'all')+Ao.*sum(Ad,'all');% sumo para cada celda (i,j) los atraidos en j desde todos los origenes y los generados en i hacia todo j. 
+      fa=fa./deltax/Deltay;
+      fa;
+      fb= Bd.*sum(Bo, 'all')+Bo.*sum(Bd,'all');% sumo para cada celda (i,j) los atraidos en j desde todos los origenes y los generados en i hacia todo j. 
+      fb=fb./deltax/Deltay;
+      fb;
+
+
+
+  z=Topouio/1000 % para que la topo este en km
+  surf(x,y,z)
+  
+
+  % Wxpos es el incremento de energía al avanzar en el sentido de x positivas 
+  % grad 3 , 
+  for i=1:40
+      for j=1:40 
+        if j<40 
+            incz= z(i,j+1)-z(i,j);          
+            alfa=atan(incz/deltax); 
+            WxposA(i,j)=masa*gcons*(sin(alfa)+mu*cos(alfa))*1000/cos(alfa); % representa el trabajo necesario para superar tanto la gravedad como la resistencia al rozamiento.
+            
+            if incz>=0
+               velauxA=vb2-(incz/deltax)*deltav7/deltag7;
+               grad3(i,j)=incz/deltax;  
+               if grad3(i,j)>=gradmax_a
+                  velauxA=vw;
+               end
+            else
+               velauxA=vb2;
+               grad3(i,j)=0.0;
+            end
+            TemxposA(i,j)=deltax/velauxA;           
+            if WxposA(i,j)<0  
+               WxposA(i,j)=0.0;
+            end
+         
+        if 0.10>= grad3(i,j) & grad3(i,j)>=0.03
+            if grad3(i,j)>=0.05
+               velauxB=vb2-(grad3(i,j))*deltav10/deltag10;
+               WxposB(i,j)= Pmax*(sqrt(incz^2 + deltax^2))/(eff*velauxB)*3600; % Motor, no energia humano
+               TemxposB(i,j)=deltax/velauxB;
+            else
+              velauxB= velgrad3;
+              Pmed=Pmin+(grad3(i,j))*deltav3/deltag3;
+              WxposB(i,j)= Pmed*(sqrt(incz^2 + deltax^2))/(eff*velauxB)*3600; % Motor, no energia humano
+              TemxposB(i,j)=deltax/velauxB;
+            end
+        else
+            if 0.10<= grad3(i,j)
+               TemxposB(i,j)=deltax/vw;
+               WxposB(i,j)= 100000000000;
+            else
+               TemxposB(i,j)=deltax/vb2; 
+               WxposB(i,j)= 0;
+            end
+        end    
+         if WxposB(i,j)<0  
+            WxposB(i,j)=0.0;
+         end
+            
+        else
+            WxposA(i,j)=100000000.0; %fuera de la ciudad con coste alto (no lo va a elegir)
+            WxposB(i,j)=100000000.0; 
+        end   
+    
+  % Wypos es el incremento de energía al avanzar en el sentido de y positivas
+
+        if i<40 
+           incz=z(i+1,j)-z(i,j);
+           alfa=atan(incz/Deltay);
+           WyposA(i,j)=masa*gcons*(sin(alfa)+mu*cos(alfa))*1000/cos(alfa);
+            if WyposA(i,j)<0  
+               WyposA(i,j)=0.0;
+            end
+            if incz>=0
+               velauxA=vb2-(incz/Deltay)*deltav7/deltag7;
+               grad1(i,j)=incz/Deltay;   
+               if grad1(i,j)>=gradmax_a
+                  velauxA=vw;
+               end
+            else
+               velauxA=vb2;
+               grad1(i,j)=0.0;  
+            end
+            TemyposA(i,j)=Deltay/velauxA;
+
+        if  0.10>= grad1(i,j) & grad1(i,j)>=0.03
+            if grad1(i,j)>=0.05
+               velauxB=vb2-(grad1(i,j))*deltav10/deltag10;
+               WyposB(i,j)= Pmax*(sqrt(incz^2 + Deltay^2))/(eff*velauxB)*3600; % Motor, no energia humano
+               TemyposB(i,j)=Deltay/velauxB;
+            else
+               velauxB= velgrad3;
+               Pmed=Pmin+(grad1(i,j))*deltav3/deltag3; % este no tiene que ser Pmed=Pmin+(grad1(i,j))*deltav3/deltag3  ???
+               WyposB(i,j)= Pmed*(sqrt(incz^2 + Deltay^2))/(eff*velauxB)*3600; % Motor, no energia humano
+               TemyposB(i,j)=Deltay/velauxB;
+            end
+        else
+            if 0.10<= grad1(i,j)
+               TemyposB(i,j)=Deltay/vw; 
+               WyposB(i,j)= 10000000000;
+            else
+               TemyposB(i,j)=Deltay/vb2; 
+               WyposB(i,j)= 0;
+            end 
+        end
+            if WyposB(i,j)<0  
+               WyposB(i,j)=0.0;
+            end        
+       
+        else
+            WyposA(i,j)=100000000.0; 
+            WyposB(i,j)=100000000.0;
+        end
+ 
+   % Wyneg es el incremento de energía al avanzar en el sentido de y negativas
+
+        if i>1 
+            incz=z(i-1,j)-z(i,j);
+            alfa=atan(incz/Deltay) ;
+            WynegA(i,j)=masa*gcons*(sin(alfa)+mu*cos(alfa))*1000/cos(alfa);
+            if incz>=0
+               velauxA=vb2-(incz/Deltay)*deltav7/deltag7;
+               grad2(i,j)=incz/Deltay; 
+               if grad2(i,j)>=gradmax_a
+                  velauxA=vw;
+               end
+            else
+               velauxA=vb2;
+               grad2(i,j)=0.0;
+            end
+            TemynegA(i,j)=Deltay/velauxA;
+            if WynegA(i,j)<0  
+               WynegA(i,j)=0.0;
+            end
+
+         if 0.10>= grad2(i,j) & grad2(i,j)>=0.03
+            if grad2(i,j)>=0.05
+               velauxB=vb2-(grad2(i,j))*deltav10/deltag10;
+               WynegB(i,j)= Pmax*(sqrt(incz^2 + Deltay^2))/(eff*velauxB)*3600; % Motor, no energia humano
+               TemynegB(i,j)=Deltay/velauxB;
+            else
+              velauxB= velgrad3;
+              Pmed=Pmin+(grad2(i,j))*deltav3/deltag3;
+              WynegB(i,j)= Pmed*(sqrt(incz^2 + Deltay^2))/(eff*velauxB)*3600; % Motor, no energia humano
+              TemynegB(i,j)=Deltay/velauxB;
+            end
+        else
+            if 0.10<= grad2(i,j)
+               TemynegB(i,j)=Deltay/vw; 
+               WynegB(i,j)= 100000000;
+            else
+               TemynegB(i,j)=Deltay/vb2; 
+               WynegB(i,j)= 0;
+            end   
+         end
+            if WynegB(i,j)<0  
+               WynegB(i,j)=0.0;   
+            end  
+       
+        else
+            WynegA(i,j)=100000000.0;
+            WynegB(i,j)=100000000.0;
+        end
+
+    % Wxneg es el incremento de energía al avanzar en el sentido de x negativas
+    
+        if j>1 
+           incz=z(i,j-1)-z(i,j);
+           alfa=atan(incz/deltax);
+           WxnegA(i,j)=masa*gcons*(sin(alfa)+mu*cos(alfa))*1000/cos(alfa);
+           if incz>=0
+              velauxA=vb2-(incz/deltax)*deltav7/deltag7;
+              grad4(i,j)=incz/deltax;  
+              if grad4(i,j)>=gradmax_a
+                 velauxA=vw;
+              end
+           else
+              velauxA=vb2;
+              grad4(i,j)=0.0;  
+           end
+            if WxnegA(i,j)<0  
+               WxnegA(i,j)=0.0;
+            end
+            TemxnegA(i,j)=deltax/velauxA;
+
+           if 0.10>= grad4(i,j) & grad4(i,j)>=0.03
+             if grad4(i,j)>=0.05
+                velauxB=vb2-(grad4(i,j))*deltav10/deltag10;
+                WxnegB(i,j)= Pmax*(sqrt(incz^2 + deltax^2))/(eff*velauxB)*3600; % Motor, no energia humano
+                TemxnegB(i,j)=deltax/velauxB;
+             else
+              velauxB= velgrad3;
+              Pmed= Pmin+(grad4(i,j))*deltav3/deltag3;
+              WxnegB(i,j)= Pmed*(sqrt(incz^2 + deltax^2))/(eff*velauxB)*3600; % Motor, no energia humano
+              TemxnegB(i,j)=deltax/velauxB;
+             end
+        else
+            if 0.10<= grad4(i,j)
+               TemxnegB(i,j)= deltax/vw; 
+               WxnegB(i,j)= 100000000;
+            else
+               TemxnegB(i,j)= deltax/vb2; 
+               WxnegB(i,j)= 0;
+            end    
+            end
+
+            if WxnegB(i,j)<0  
+               WxnegB(i,j)=0.0;
+            end    
+
+        else
+            WxnegA(i,j)=10000000000.0; %fuera de la ciudad con coste alto (no lo va a elegir)
+            WxnegB(i,j)=10000000000.0; 
+        end
+        
+       end 
+  end
+
+ %grad1
+ %grad2
+ %grad3
+ %grad4
+
+
+% USUARIO A
+RouteA(1:40*40,1:40*40,1:4)=0;
+WenRouteA(1:40*40,1:40*40)=0;
+
+ncount1=1;
+norig=0;
+while ncount1==1
+    %comienzo por un origen para calcular camino mínimo
+    norig=norig+1;
+    i=floor((norig-1)/40)+1;
+    j=norig-(i-1)*40;
+    RouteA(norig,norig,1)=norig; %?
+    %comienzo a extender la ruta d eun punto norig a todos los destinos posibles 
+    ncount2=1;
+    while ncount2==1 
+     WenergA=100000000;
+     nvec=0;
+     %extiendo la ruta a un solo punto k
+     for k=1:40*40
+         nroute=0;
+        for kkk=1:4
+            if RouteA(norig,k,kkk)~=0
+               nroute=1; % me esta diciendo que entre punto norig y k hay una connexión existente
+            end
+        end
+        if k~=norig & nroute==0  % para k y norig sin conexiones existentes
+            ik=floor((k-1)/40)+1;
+            jk=k-(ik-1)*40;
+            if ik>1
+               nroutek=0;
+                for mmm=1:4
+                   if RouteA(norig,k-40,mmm)~=0
+                      nroutek=1;
+                   end
+                end  
+                if nroutek==1 & (WenRouteA(norig,k-40)+WyposA(ik-1,jk)<=WenergA) % wenroute es energia consumida entre norig y k
+                   nvec=1;
+                   WenergA=WenRouteA(norig,k-40)+WyposA(ik-1,jk)*Deltay;
+                   kmin=k;
+                end
+             end
+             if ik<40 
+                nroutek=0;
+                for mmm=1:4
+                   if RouteA(norig,k+40,mmm)~=0
+                      nroutek=1;
+                   end
+                end  
+                if nroutek==1 & (WenRouteA(norig,k+40)+WynegA(ik+1,jk)<=WenergA) 
+                   nvec=2;
+                   WenergA=WenRouteA(norig,k+40)+WynegA(ik+1,jk)*Deltay;
+                   kmin=k;
+                end
+             end
+             if jk>1 
+                nroutek=0;
+                for mmm=1:4
+                   if RouteA(norig,k-1,mmm)~=0
+                      nroutek=1;
+                   end
+                end  
+                if nroutek==1 & (WenRouteA(norig,k-1)+WxposA(ik,jk-1)<=WenergA)
+                   nvec=3;
+                   WenergA=WenRouteA(norig,k-1)+WxposA(ik,jk-1)*deltax;
+                   kmin=k;
+                end
+             end
+             
+             if jk<40 
+                nroutek=0;
+                for mmm=1:4
+                   if RouteA(norig,k+1,mmm)~=0
+                      nroutek=1;
+                   end
+                end  
+                 if nroutek==1 & (WenRouteA(norig,k+1)+WxnegA(ik,jk+1)<=WenergA) 
+                    nvec=4;
+                    WenergA=WenRouteA(norig,k+1)+WxnegA(ik,jk+1)*deltax;
+                    kmin=k;
+                end
+           end
+        end
+     end
+
+     if nvec==1 
+        kpair=kmin-40;
+     end
+     if nvec==2 
+        kpair=kmin+40;
+     end
+     if nvec==3 
+        kpair=kmin-1;
+     end
+     if nvec==4 
+        kpair=kmin+1;
+     end
+     if nvec==0 
+        ncount2=0;
+     else
+        RouteA(norig,kmin,nvec)=kpair;
+        WenRouteA(norig,kmin)=WenergA;
+        k_fi=kmin;
+        Route_fi=RouteA(norig,kmin,nvec);
+        Energy_fiA=WenRouteA(norig,kmin);
+     end   
+    end
+    % Hasta aquí he encontrado la ruta de coste mínimo de un punto norig a los destinos de la región. No obstante puede haber otras rutas
+    % con el mismo coste no contempladas. Enumero las 4 opciones para cada punto
+    
+    for k=1:40*40
+        if k~= norig   
+           ik=floor((k-1)/40)+1;
+           jk=k-(ik-1)*40;
+            if ik>1
+               nroutek=0;
+                  for mmm=1:4
+                   if RouteA(norig,k-40,mmm)~=0
+                      nroutek=1;
+                   end
+                  end  
+                
+                  if nroutek==1 & RouteA(norig,k,1)==0 & WenRouteA(norig,k-40)+WyposA(ik-1,jk)*Deltay<=WenRouteA(norig,k) 
+                     RouteA(norig,k,1)=k-40;
+                  end
+             end
+         
+             if ik<40 
+                nroutek=0;
+                  for mmm=1:4
+                   if RouteA(norig,k+40,mmm)~=0
+                      nroutek=1;
+                   end
+                  end  
+                  if nroutek==1 & RouteA(norig,k,2)==0 && WenRouteA(norig,k+40)+WynegA(ik+1,jk)*Deltay<=WenRouteA(norig,k)
+                     RouteA(norig,k,2)=k+40;
+                  end
+             end
+          
+             if jk>1 
+                 nroutek=0;
+                  for mmm=1:4
+                   if RouteA(norig,k-1,mmm)~=0
+                      nroutek=1;
+                   end
+                  end  
+                  if nroutek==1 & RouteA(norig,k,3)==0 && WenRouteA(norig,k-1)+WxposA(ik,jk-1)*deltax<=WenRouteA(norig,k) 
+                     RouteA(norig,k,3)=k-1;
+                  end
+             end
+            
+             if jk<40 
+                 nroutek=0;
+                  for mmm=1:4
+                   if RouteA(norig,k+1,mmm)~=0
+                      nroutek=1;
+                   end
+                  end  
+                  if nroutek==1 & RouteA(norig,k,4)==0 && WenRouteA(norig,k+1)+WxnegA(ik,jk+1)*deltax<=WenRouteA(norig,k)
+                     RouteA(norig,k,4)=k+1;
+                  end
+             end 
+        end
+            
+    end
+    if norig==40*40
+        ncount1=0;
+    end
+end   
+norig;
+blanca=zeros(1600,1600);
+for k=1:40*40
+    for kk=1:40*40
+      if RouteA(k,kk,1)==0 & RouteA(k,kk,2)==0 && RouteA(k,kk,3)==0 && RouteA(k,kk,4)==0
+         blanca(k,kk)=1;
+      end    
+    end
+end
+%blanca
+Blanc_A=sum(blanca,'all')
+
+
+% USARIO B
+RouteB(1:40*40,1:40*40,1:4)=0;
+WenRouteB(1:40*40,1:40*40)=0;
+TenrouteB(1:40*40,1:40*40)=0;
+
+ncount1=1;
+norig=0;
+while ncount1==1
+    %comienzo por un origen para calcular camino mínimo
+    norig=norig+1;
+    i=floor((norig-1)/40)+1;
+    j=norig-(i-1)*40;
+    RouteB(norig,norig,1)=norig;
+    %comienzo a extender la ruta de un punto norig a todos los destinos posibles 
+    ncount2=1;
+    while ncount2==1 
+     WenergB=100000000;
+     Tmax=1000000000;
+     nvec=0;
+     %extiendo la ruta a un solo punto k
+     for k=1:40*40
+         nroute=0;
+        for kkk=1:4
+            if RouteB(norig,k,kkk)~=0
+               nroute=1; % me esta diciendo que entre punto norig y k hay una connexión existente
+            end
+        end
+        if k~=norig & nroute==0  % para k y norig sin conexiones existentes
+           ik=floor((k-1)/40)+1;
+           jk=k-(ik-1)*40;
+            if ik>1
+               nroutek=0;
+                for mmm=1:4
+                   if RouteB(norig,k-40,mmm)~=0
+                      nroutek=1;
+                   end
+                end  
+                 if nroutek==1 & (TenrouteB(norig,k-40)+TemyposB(ik-1,jk)<=Tmax) 
+                    nvec=1;
+                    Tmax=TenrouteB(norig,k-40)+TemyposB(ik-1,jk);
+                    kmin=k;
+                end
+            end
+        
+            if ik<40 
+                nroutek=0;
+                for mmm=1:4
+                   if RouteB(norig,k+40,mmm)~=0
+                      nroutek=1;
+                   end
+                end  
+                if nroutek==1 & (TenrouteB(norig,k+40)+TemynegB(ik+1,jk)<=Tmax) 
+                   nvec=2;
+                   Tmax=TenrouteB(norig,k+40)+TemynegB(ik+1,jk);
+                   kmin=k;
+                end
+             end
+         
+             if jk>1 
+                nroutek=0;
+                for mmm=1:4
+                   if RouteB(norig,k-1,mmm)~=0
+                      nroutek=1;
+                   end
+                end  
+                if nroutek==1 & (TenrouteB(norig,k-1)+TemxposB(ik,jk-1)<=Tmax) 
+                   nvec=3;
+                   Tmax=TenrouteB(norig,k-1)+TemxposB(ik,jk-1);
+                   kmin=k;
+                end
+             end
+          
+             if jk<40 
+                nroutek=0;
+                for mmm=1:4
+                   if RouteB(norig,k+1,mmm)~=0
+                      nroutek=1;
+                   end
+                end  
+                 if nroutek==1 & (TenrouteB(norig,k+1)+TemxnegB(ik,jk+1)<=Tmax) 
+                    nvec=4;
+                    Tmax=TenrouteB(norig,k+1)+TemxnegB(ik,jk+1);
+                    kmin=k;
+                 end
+             end
+        end
+     end
+     if nvec==1 
+        kpair=kmin-40;
+     end
+     if nvec==2 
+        kpair=kmin+40;
+     end
+     if nvec==3 
+        kpair=kmin-1;
+     end
+     if nvec==4 
+        kpair=kmin+1;
+     end
+     if nvec==0 
+        ncount2=0;
+     else
+        RouteB(norig,kmin,nvec)=kpair;
+        TenrouteB(norig,kmin)=Tmax;
+        k_fi=kmin;
+        Route_fiB=RouteB(norig,kmin,nvec);
+       Temps_fiB=TenrouteB(norig,kmin);
+     end   
+    end
+    % Hasta aquí he encontrado la ruta de coste mínimo de un punto norig a todos los destinos de la región. No obstante puede haber otras rutas
+    % con el mismo coste no contempladas. Enumero las 4 opciones para cada punto
+    
+    for k=1:40*40
+        if k~= norig   
+            ik=floor((k-1)/40)+1;
+            jk=k-(ik-1)*40;
+            if ik>1
+                  nroutek=0;
+                  for mmm=1:4
+                   if RouteB(norig,k-40,mmm)~=0
+                      nroutek=1;
+                   end
+                  end  
+                  if nroutek==1 & RouteB(norig,k,1)==0 & TenrouteB(norig,k-40)+TemyposB(ik-1,jk)<=TenrouteB(norig,k) 
+                     RouteB(norig,k,1)=k-40;
+                  end
+             end
+            
+             if ik<40 
+                  nroutek=0;
+                  for mmm=1:4
+                   if RouteB(norig,k+40,mmm)~=0
+                      nroutek=1;
+                   end
+                  end  
+                  if nroutek==1 & RouteB(norig,k,2)==0 & TenrouteB(norig,k+40)+TemynegB(ik+1,jk)<=TenrouteB(norig,k)
+                     RouteB(norig,k,2)=k+40;
+                  end
+             end
+            
+             if jk>1 
+                 nroutek=0;
+                  for mmm=1:4
+                   if RouteB(norig,k-1,mmm)~=0
+                      nroutek=1;
+                   end
+                  end                  
+                  if nroutek==1 & RouteB(norig,k,3)==0 & TenrouteB(norig,k-1)+TemxposB(ik,jk-1)<=TenrouteB(norig,k) 
+                     RouteB(norig,k,3)=k-1;
+                  end
+             end
+
+             if jk<40 
+                 nroutek=0;
+                  for mmm=1:4
+                   if RouteB(norig,k+1,mmm)~=0
+                      nroutek=1;
+                   end
+                  end           
+                  if nroutek==1 & RouteB(norig,k,4)==0 & TenrouteB(norig,k+1)+TemxnegB(ik,jk+1)<=TenrouteB(norig,k)
+                     RouteB(norig,k,4)=k+1;
+                  end
+             end 
+        end
+   
+    end
+    if norig==40*40
+       ncount1=0;
+    end
+end   
+norig;
+blancb=zeros(1600,1600);
+for k=1:40*40
+    for kk=1:40*40
+      if RouteB(k,kk,1)==0 & RouteB(k,kk,2)==0 & RouteB(k,kk,3)==0 & RouteB(k,kk,4)==0
+         blancb(k,kk)=1;
+      end    
+    end
+end
+%blancb
+Blanc_B=sum(blancb,'all')
+
+
+
+% valoro grau de connectivitat de cada regio usuari A
+    gaVypos=zeros(40,40);
+    gaVyneg=zeros(40,40);
+    gaHxpos=zeros(40,40);
+    gaHxneg=zeros(40,40);
+    gaVypos_w=zeros(40,40);
+    gaVyneg_w=zeros(40,40);
+    gaHxpos_w=zeros(40,40);
+    gaHxneg_w=zeros(40,40);
+    matrixA_w=zeros(40*40,40*40);
+
+
+for k=1:40*40
+    k;
+    connect=zeros(1,40*40);
+    flow=zeros(1,40*40);
+    potential=ones(1,40*40);
+    potential(1,k)=0;
+    i=floor((k-1)/40)+1;
+    j=k-(i-1)*40;
+ 
+    for kk=1:40*40
+        ikk=floor((kk-1)/40)+1;
+        jkk=kk-(ikk-1)*40;
+        ncount5=0;
+
+        for mm=1:4
+         if RouteA(k,kk,mm)~=0 && k~=kk
+            if mm==1  
+               connect(1,kk-40)=connect(1,kk-40)+1;   
+               ncount5=1;
+            end
+            if mm==2  
+               connect(1,kk+40)=connect(1,kk+40)+1;     
+               ncount5=1;
+            end
+            if mm==3  
+               connect(1,kk-1)=connect(1,kk-1)+1;  
+               ncount5=1;
+            end
+            if mm==4  
+               connect(1,kk+1)=connect(1,kk+1)+1; 
+               ncount5=1;
+            end
+         end
+        end 
+        flow(1,kk)=Ao(i,j)*Ad(ikk, jkk);
+    end
+    
+  
+    ncount3=0;
+    while ncount3==0 
+          ncount4=0;
+     for kk=1:40*40
+         
+         if connect(1,kk)==0 && potential(1,kk)==1 && blanca(k,kk)==0
+            ikk=floor((kk-1)/40)+1;
+            jkk=kk-(ikk-1)*40;
+            nroutek1=0;
+            nroutek2=0;
+            nroutek3=0;
+            nroutek4=0;
+            nsuma=0;
+
+            if ikk>1
+                 if RouteA(k,kk,1)~=0
+                    nroutek1=1;
+                    nsuma=nsuma+1;
+                 end
+            end
+            if ikk<40 
+                 if RouteA(k,kk,2)~=0
+                    nroutek2=1;
+                    nsuma=nsuma+1;
+                 end
+            end
+            if jkk>1 
+                 if RouteA(k,kk,3)~=0
+                    nroutek3=1;
+                    nsuma=nsuma+1;
+                 end
+            end
+            if jkk<40 
+                 if RouteA(k,kk,4)~=0
+                    nroutek4=1;
+                    nsuma=nsuma+1;
+                 end
+            end
+            if nroutek1==1 
+               nroutek1=1; 
+               knew=kk-40;
+               iknew=floor((knew-1)/40)+1;
+               jknew=knew-(iknew-1)*40;
+                if grad1(iknew,jknew)<=gradmax_a
+                   gaVypos(ikk,jkk)=gaVypos(ikk,jkk)+flow(1,kk)/nsuma; 
+                else
+                   gaVypos_w(ikk,jkk)=gaVypos_w(ikk,jkk)+flow(1,kk)/nsuma; 
+                   matrixA_w(k,kk)=1;
+                end    
+                   flow(1,knew)=flow(1,knew)+flow(1,kk)/nsuma;
+                   connect(1,knew)=connect(1,knew)-1;
+                   potential(1,kk)=0;
+            end
+
+            if nroutek2==1 
+               nroutek2=1;
+               knew=kk+40;
+               iknew=floor((knew-1)/40)+1;
+               jknew=knew-(iknew-1)*40;
+                if grad2(iknew,jknew)<=gradmax_a
+                   gaVyneg(ikk,jkk)=gaVyneg(ikk,jkk)+flow(1,kk)/nsuma;
+                else
+                   gaVyneg_w(ikk,jkk)=gaVyneg_w(ikk,jkk)+flow(1,kk)/nsuma;
+                   matrixA_w(k,kk)=1;
+                end    
+                flow(1,kk+40)=flow(1,kk+40)+flow(1,kk)/nsuma;
+                connect(1,kk+40)=connect(1,kk+40)-1;      
+                potential(1,kk)=0;
+            end
+
+            if nroutek3==1
+               nroutek3=1;
+               knew=kk-1;
+               iknew=floor((knew-1)/40)+1;
+               jknew=knew-(iknew-1)*40;
+                if grad3(iknew,jknew)<=gradmax_a
+                   gaHxpos(ikk,jkk)=gaHxpos(ikk,jkk)+flow(1,kk)/nsuma;
+                else
+                   gaHxpos_w(ikk,jkk)=gaHxpos_w(ikk,jkk)+flow(1,kk)/nsuma;
+                   matrixA_w(k,kk)=1;
+                end
+                flow(1,kk-1)=flow(1,kk-1)+flow(1,kk)/nsuma;
+                connect(1,kk-1)=connect(1,kk-1)-1;   
+                potential(1,kk)=0;
+            end
+
+            if nroutek4==1 
+               nroutek4=1;
+               knew=kk+1;
+               iknew=floor((knew-1)/40)+1;
+               jknew=knew-(iknew-1)*40;
+                if grad4(iknew,jknew)<=gradmax_a
+                   gaHxneg(ikk,jkk)=gaHxneg(ikk,jkk)+flow(1,kk)/nsuma;
+                else
+                   gaHxneg_w(ikk,jkk)=gaHxneg_w(ikk,jkk)+flow(1,kk)/nsuma;
+                   matrixA_w(k,kk)=1;
+                end    
+                   flow(1,kk+1)=flow(1,kk+1)+flow(1,kk)/nsuma;
+                   connect(1,kk+1)=connect(1,kk+1)-1;
+                   potential(1,kk)=0;
+            end   
+            ncount4=1; 
+         end
+     end
+     if ncount4==0 
+        ncount3=1;
+     end  
+    end
+end
+gaVypos
+gaVyneg
+gaHxpos
+gaHxneg
+gaVypos_w
+gaVyneg_w
+gaHxpos_w
+gaHxneg_w
+
+Ao
+     aaa=sum(Ao,'all')
+     gaVpos=sum(gaVypos,'all')
+     gaVpos_w=sum(gaVypos_w,'all')
+     gaVneg=sum(gaVyneg,'all')
+     gaVneg_w=sum(gaVyneg_w,'all')
+     gaHpos=sum(gaHxpos,'all')
+     gaHpos_w=sum(gaHxpos_w,'all')
+     gaHneg=sum(gaHxneg,'all')
+     gaHneg_w=sum(gaHxneg_w,'all')
+     ConODa_w=sum(matrixA_w,'all') %conexiones OD caminando de A
+     Adem= Ao.*sum(Ad, 'all')
+     Apax=sum(Adem,'all')%numero de viajes de tipo A
+
+% valoro grau de connectivitat de cada regio usuari B
+    gbVypos=zeros(40,40);
+    gbVyneg=zeros(40,40);
+    gbHxpos=zeros(40,40);
+    gbHxneg=zeros(40,40);
+    gbVypos_w=zeros(40,40);
+    gbVyneg_w=zeros(40,40);
+    gbHxpos_w=zeros(40,40);
+    gbHxneg_w=zeros(40,40);
+    matrixB_w=zeros(40*40,40*40);
+
+
+for k=1:40*40
+    k;
+    connectB=zeros(1,40*40);
+    flowB=zeros(1,40*40);
+    potentialB=ones(1,40*40);
+    potentialB(1,k)=0;
+    i=floor((k-1)/40)+1;
+    j=k-(i-1)*40;
+
+    for kk=1:40*40
+        ikk=floor((kk-1)/40)+1;
+        jkk=kk-(ikk-1)*40;
+        ncount5=0;
+ 
+        for mm=1:4
+         if RouteB(k,kk,mm)~=0 && k~=kk
+            if mm==1  
+               connectB(1,kk-40)=connectB(1,kk-40)+1;      
+               ncount5=1;
+            end
+            if mm==2  
+               connectB(1,kk+40)=connectB(1,kk+40)+1;     
+               ncount5=1;
+            end
+            if mm==3  
+               connectB(1,kk-1)=connectB(1,kk-1)+1;  
+               ncount5=1;
+            end
+            if mm==4  
+               connectB(1,kk+1)=connectB(1,kk+1)+1; 
+               ncount5=1;
+            end
+         end
+        end 
+        flowB(1,kk)=Bo(i,j)*Bd(ikk, jkk);
+    end
+
+   
+    
+    ncount3=0;
+    while ncount3==0 
+          ncount4=0;
+     for kk=1:40*40
+         
+         if connectB(1,kk)==0 && potentialB(1,kk)==1 && blancb(k,kk)==0
+            ikk=floor((kk-1)/40)+1;
+            jkk=kk-(ikk-1)*40;
+            nroutek1=0;
+            nroutek2=0;
+            nroutek3=0;
+            nroutek4=0;
+            nsuma=0;
+
+            if ikk>1
+                  if RouteB(k,kk,1)~=0
+                     nroutek1=1;
+                     nsuma=nsuma+1;
+                     
+                  end
+            end
+            if ikk<40 
+                  if RouteB(k,kk,2)~=0
+                     nroutek2=1;
+                     nsuma=nsuma+1;
+                     
+                  end
+            end
+            if jkk>1 
+                  if RouteB(k,kk,3)~=0
+                     nroutek3=1;
+                     nsuma=nsuma+1;
+                     
+                  end
+            end
+            if jkk<40 
+                  if RouteB(k,kk,4)~=0
+                     nroutek4=1;
+                     nsuma=nsuma+1;
+                     
+                  end
+            end
+     
+            if nroutek1==1 
+               nroutek1=1;
+               knew=kk-40;
+               iknew=floor((knew-1)/40)+1;
+               jknew=knew-(iknew-1)*40;
+                %gr1=grad1(iknew,jknew)
+                %gradmax_b
+                if grad1(iknew,jknew)<=gradmax_b
+                   gbVypos(ikk,jkk)=gbVypos(ikk,jkk)+flowB(1,kk)/nsuma; 
+                   %gb=gbVypos(ikk,jkk)
+                   %ll1=flowB(1,kk)/nsuma
+                else
+                   gbVypos_w(ikk,jkk)=gbVypos_w(ikk,jkk)+flowB(1,kk)/nsuma; 
+                   matrixB_w(k,kk)=1;
+                end    
+                   flowB(1,knew)=flowB(1,knew)+flowB(1,kk)/nsuma;
+                   connectB(1,knew)=connectB(1,knew)-1;
+                   potentialB(1,kk)=0;
+            end
+
+            if nroutek2==1 
+               nroutek2=1;
+               knew=kk+40;
+               iknew=floor((knew-1)/40)+1;
+               jknew=knew-(iknew-1)*40;
+                %gr2=grad2(iknew,jknew)
+                %gradmax_b
+                if grad2(iknew,jknew)<=gradmax_b
+                   gbVyneg(ikk,jkk)=gbVyneg(ikk,jkk)+flowB(1,kk)/nsuma;
+                   %gb=gbVyneg(ikk,jkk)
+                   %ll1=flowB(1,kk)/nsuma
+                else
+                  gbVyneg_w(ikk,jkk)=gbVyneg_w(ikk,jkk)+flowB(1,kk)/nsuma;
+                  matrixB_w(k,kk)=1;
+                end    
+                flowB(1,kk+40)=flowB(1,kk+40)+flowB(1,kk)/nsuma;
+                connectB(1,kk+40)=connectB(1,kk+40)-1;      
+                potentialB(1,kk)=0;
+            end
+           
+            if nroutek3==1
+               nroutek3=1; 
+               knew=kk-1;
+               iknew=floor((knew-1)/40)+1;
+               jknew=knew-(iknew-1)*40;
+                %gr3=grad3(iknew,jknew)
+                %gradmax_b
+                if grad3(iknew,jknew)<=gradmax_b
+                   gbHxpos(ikk,jkk)=gbHxpos(ikk,jkk)+flowB(1,kk)/nsuma;
+                   %gb=gbHxpos(ikk,jkk)
+                   %ll1=flowB(1,kk)/nsuma
+                else
+                   gbHxpos_w(ikk,jkk)=gbHxpos_w(ikk,jkk)+flowB(1,kk)/nsuma;
+                   matrixB_w(k,kk)=1;
+                end
+                   flowB(1,kk-1)=flowB(1,kk-1)+flowB(1,kk)/nsuma;
+                   connectB(1,kk-1)=connectB(1,kk-1)-1;   
+                   potentialB(1,kk)=0;
+            end
+
+            if nroutek4==1 
+               nroutek4=1; 
+               knew=kk+1;
+               iknew=floor((knew-1)/40)+1;
+               jknew=knew-(iknew-1)*40;
+               %gr4=grad4(iknew,jknew)
+                %gradmax_b
+                if grad4(iknew,jknew)<=gradmax_b
+                   gbHxneg(ikk,jkk)=gbHxneg(ikk,jkk)+flowB(1,kk)/nsuma;
+                   %  gb=gbHxneg(ikk,jkk)
+                   %ll1=flowB(1,kk)/nsuma
+                else
+                   gbHxneg_w(ikk,jkk)=gbHxneg_w(ikk,jkk)+flowB(1,kk)/nsuma;
+                   matrixB_w(k,kk)=1;
+                end  
+                   flowB(1,kk+1)=flowB(1,kk+1)+flowB(1,kk)/nsuma;
+                   connectB(1,kk+1)=connectB(1,kk+1)-1;
+                   potentialB(1,kk)=0;
+            end  
+         
+            ncount4=1;
+          end
+     end
+     if ncount4==0 
+        ncount3=1;
+     end  
+    end
+end
+gbVypos
+gbVyneg
+gbHxpos
+gbHxneg
+gbVypos_w
+gbVyneg_w
+gbHxpos_w
+gbHxneg_w
+    
+    bbb=sum(Bo,'all')
+    gbVpos=sum(gbVypos,'all')
+    gbVpos_w=sum(gbVypos_w,'all')
+    gbVneg=sum(gbVyneg,'all')
+    gbVneg_w=sum(gbVyneg_w,'all')
+    gbHpos=sum(gbHxpos,'all')
+    gbHpos_w=sum(gbHxpos_w,'all')
+    gbHneg=sum(gbHxneg,'all')
+    gbHneg_w=sum(gbHxneg_w,'all')
+    ConODb_w=sum(matrixB_w,'all') %conexiones OD caminando de B
+    Bdem=Bo.*sum(Bd, 'all')
+    Bpax=sum(Bdem,'all')%numero de viajes de tipo B
+
+   
+ for i=1:40
+     i;
+ for j=1:40
+     kkk=0;  
+        %cálculo de términos de la función objetivo (dependen de la discretización de sb)
+  Zmin=100000000;
+
+    for mm3=1:40
+     xsol(3)=mm3*0.1; %=1km 3km
+    for mm4=1:40
+     xsol(4)=mm4*0.1; %=1km 4km
+     L=0;
+     A_ab=0;
+     IVTT_ax=0;
+     IVTT_ay=0;
+     A_bb=0;
+     IVTT_bx=0;
+     IVTT_by=0; 
+     L = L + 2 * deltax / xsol(3) * Deltay;
+     L = L + 2 * Deltay / xsol(4) * deltax;
+
+ 
+     %% USUARIO A
+
+      if ixe==1 
+         A_ab = A_ab + fa(i,j) * (xsol(3) + xsol(4)) / 8 *(1/vb1+1/(4*vb2)) * deltax * Deltay; %cambiado
+      end
+
+      if ixe==0 
+         A_ab = A_ab + fa(i,j) * (xsol(3) + xsol(4)) / 2 / vb1 * deltax * Deltay;
+      end
+      
+      IVTT_ax = gaHxpos(i, j)*TemxposA(i,j) + gaHxneg(i, j) * TemxnegA(i,j);
+      IVTT_ay = gaVypos(i, j)*TemyposA(i,j) + gaVyneg(i, j) * TemynegA(i,j);
+      IVTT_ax_w = gaHxpos_w(i, j)*TemxposA(i,j) + gaHxneg_w(i, j) * TemxnegA(i,j);
+      IVTT_ay_w = gaVypos_w(i, j)*TemyposA(i,j) + gaVyneg_w(i, j) * TemynegA(i,j);
+      q_axpos(i, j) = gaHxpos(i, j);
+      q_axneg(i, j) = gaHxneg(i, j);
+      q_aypos(i, j) = gaVypos(i, j);
+      q_ayneg(i, j) = gaVyneg(i, j);
+      
+
+      %% USUARIO B
+      
+      %If ixe=0 entonces minimizan distancia total (van directos sin backtraking)
+      if ixe==0 
+         A_bb = A_bb + fb(i,j) * (xsol(3) + xsol(4)) / 2 / vb1 * deltax * Deltay;
+      end
+
+      %If ixe=1 entonces minimzan distancia a pie y bici lenta
+      if ixe==1 
+         A_bb = A_bb + fb(i,j) * (xsol(3) + xsol(4)) / 8 *(1/vb1+1/(4*vb2)) * deltax * Deltay; 
+      end
+         
+      IVTT_bx = gbHxpos(i, j)*TemxposB(i,j) + gbHxneg(i, j) * TemxnegB(i,j);
+      IVTT_by = gbVypos(i, j)*TemyposB(i,j) + gbVyneg(i, j) * TemynegB(i,j);
+      IVTT_bx_w = gbHxpos_w(i, j)*TemxposB(i,j) + gbHxneg_w(i, j) * TemxnegB(i,j);
+      IVTT_by_w = gbVypos_w(i, j)*TemyposB(i,j) + gbVyneg_w(i, j) * TemynegB(i,j);
+      q_bxpos(i, j) = gbHxpos(i, j);
+      q_bxneg(i, j) = gbHxneg(i, j);
+      q_bypos(i, j) = gbVypos(i, j);
+      q_byneg(i, j) = gbVyneg(i, j);
+      
+
+       %formulo funcion objetivo
+       Z = (Cl * L + Vot * (IVTT_ax + IVTT_ay + IVTT_bx + IVTT_by + A_ab + A_bb+ IVTT_ax_w + IVTT_ay_w + IVTT_bx_w + IVTT_by_w)); 
+     
+      
+       kkk=kkk+1;
+ 
+        
+       %Capacidad
+       if i >= 1 && 1 <= nx && j >= 1 && j <= ny 
+             qxpos = (q_axpos(i, j) + q_bxpos(i, j))*xsol(4)/deltax; % *xsol(4)/deltax para saber el flujo por carril en cada celda
+             qxneg = (q_axneg(i, j) + q_bxneg(i, j))*xsol(4)/deltax;
+             qypos = (q_aypos(i, j) + q_bypos(i, j))*xsol(3)/Deltay;
+             qyneg = (q_ayneg(i, j) + q_byneg(i, j))*xsol(3)/Deltay;
+
+       end 
+
+       if qxpos<=C && qxneg<=C && qypos<=C&& qyneg<=C &&Z<=Zmin
+          Zmin=Z;
+          Zdef(i,j)=Z;
+          sBx(i,j)=xsol(3);
+          sBy(i,j)=xsol(4);
+          Ldef(i,j)=L;
+          IVTT_adef(i,j)=IVTT_ax +IVTT_ay;
+          IVTT_bdef(i,j)=IVTT_bx +IVTT_by;
+          IVTTw_adef(i,j)=IVTT_ax_w +IVTT_ay_w;
+          IVTTw_bdef(i,j)=IVTT_bx_w +IVTT_by_w;
+          A_abdef(i,j)=A_ab;
+          A_bbdef(i,j)=A_bb;
+          Zudef(i,j)=Vot * (IVTT_ax + IVTT_ay + IVTT_bx + IVTT_by + A_ab + A_bb + IVTT_ax_w + IVTT_ay_w + IVTT_bx_w + IVTT_by_w);
+          Zadef(i,j)=(Cl * L);
+          Tdef(i,j)=IVTT_ax + IVTT_ay + IVTT_bx + IVTT_by + A_ab + A_bb + IVTT_ax_w + IVTT_ay_w + IVTT_bx_w + IVTT_by_w;
+          qxposdef(i,j)= qxpos;
+          qxnegdef(i,j)= qxneg;  
+          qyposdef(i,j)= qypos; 
+          qynegdef(i,j)= qyneg;
+
+       end
+      end
+    end 
+ end
+ end
+    
+       %qxposdef
+       %qxnegdef  
+       %qyposdef 
+       %qynegdef
+
+
+Discretizo la red en corredores
+ %ejes en horizontal cuadrante inferior
+ yd_inf=zeros(20,300);  %por qué de 20x300?
+ ncorredorx_inf=zeros(300);
+ ycorr_inf=zeros(20,300);
+ nlinkfw_inf=zeros(20,300);
+ nlinkbw_inf=zeros(20,300);
+
+ for j=1:40
+     yd_inf(j,1)=0;
+     ncorredorx_inf(j)=1;
+     disw=0; % disw= distancia recorrida
+     dmin=0;
+     for ii=1:20
+         i=40-ii+1;
+         ii;
+         k=0;
+         while k==0
+             if  disw+(Deltay*ii-dmin)/sBy(i,j) <1
+               k=1;
+             else
+               k=0;
+               ncorredorx_inf(j)=ncorredorx_inf(j)+1;
+               
+               yd_inf(j,ncorredorx_inf(j))=dmin+sBy(i,j)*(1-disw);
+               disw=0;
+              
+               dmin=yd_inf(j,ncorredorx_inf(j));
+             end    
+         end
+         dmin=Deltay*ii;
+         disw=min(disw+Deltay/sBy(i,j),disw+(Deltay*ii-yd_inf(j,ncorredorx_inf(j)))/sBy(i,j));
+     end
+     %ajusto distancia último corredor 
+     if Deltay*20-yd_inf(j,ncorredorx_inf(j))>=0.5*sBy(i,j)
+         ncorredorx_inf(j)=ncorredorx_inf(j)+1;
+         yd_inf(j,ncorredorx_inf(j))=Deltay*20;
+     else
+         yd_inf(j,ncorredorx_inf(j))=Deltay*20;
+     end
+ end
+
+ %calculo la coordenada y del corredor que pasa por el medio de la zona de cobertura
+ ncorxmax_inf=0; % max número de corredores en x inferior
+ for j=1:40
+     if ncorredorx_inf(j)>ncorxmax_inf
+         ncorxmax_inf=ncorredorx_inf(j);
+     end
+     for k=1:ncorredorx_inf(j)-1
+         ycorr_inf(j,k)=yd_inf(j,k)+(yd_inf(j,k+1)-yd_inf(j,k))/2;
+     end
+     
+ end
+  %uno tramos de corredores con bifurcaciones
+ for j=1:39
+     for k=1:ncorredorx_inf(j)
+         dmax=10000000;
+         for kk=1:ncorredorx_inf(j+1)
+             if abs(ycorr_inf(j,k)-ycorr_inf(j+1,kk))< dmax
+                 nlinkfw_inf(j,k)=kk; % número de forward links cuadrante inferior
+                 dmax=abs(ycorr_inf(j,k)-ycorr_inf(j+1,kk));
+             end
+         end
+     end
+ end
+ 
+ for j=2:40
+     for k=1:ncorredorx_inf(j)
+         dmax=10000000;
+         for kk=1:ncorredorx_inf(j-1)
+             if abs(ycorr_inf(j,k)-ycorr_inf(j-1,kk))< dmax
+                 nlinkbw_inf(j,k)=kk; % número de backward links cuadrante inferior
+                 dmax=abs(ycorr_inf(j,k)-ycorr_inf(j-1,kk));
+             end
+         end
+     end
+ end
+ 
+ 
+ %ejes en horizontal cuadrante superior
+ yd_sup=zeros(20,300);
+ yd_aux=zeros(20,300);
+ ncorredorx_sup=zeros(300);
+ ycorr_sup=zeros(20,300);
+ nlinkfw_sup=zeros(20,300);
+ nlinkbw_sup=zeros(20,300);
+ for j=1:40
+     yd_sup(j,1)=0;
+     ncorredorx_sup(j)=1;
+     disw=0;
+     dmin=0;
+     for i=1:20
+        k=0;
+         while k==0
+             if  disw+(Deltay*i-dmin)/sBy(i,j) <1
+               k=1;
+             else
+               k=0;
+               ncorredorx_sup(j)=ncorredorx_sup(j)+1;
+               
+               yd_sup(j,ncorredorx_sup(j))=dmin+sBy(i,j)*(1-disw);
+               disw=0;
+              
+               dmin=yd_sup(j,ncorredorx_sup(j));
+             end    
+         end
+         dmin=Deltay*i;
+         disw=min(disw+Deltay/sBy(i,j),disw+(Deltay*i-yd_sup(j,ncorredorx_sup(j)))/sBy(i,j));
+     end
+
+     %ajusto distancia último corredor 
+     if Deltay*20-yd_sup(j,ncorredorx_sup(j))>=0.5*sBy(i,j)
+         ncorredorx_sup(j)=ncorredorx_sup(j)+1;
+         yd_sup(j,ncorredorx_sup(j))=Deltay*20;
+     else
+         yd_sup(j,ncorredorx_sup(j))=Deltay*20;
+     end
+ end
+ for j=1:40
+     for kkk=1:ncorredorx_sup(j)
+         yd_aux(j,kkk)=yd_sup(j,kkk);
+         yd_sup(j,kkk)=0;
+     end
+     for kkk=1:ncorredorx_sup(j)
+         yd_sup(j,kkk)=Deltay*40-yd_aux(j,kkk);
+     end
+ end
+ 
+ %calculo la coordenada y del corredor que pasa por el medio de la zona de
+ %cobertura
+ ncorxmax=0;
+ for j=1:40
+     if ncorredorx_inf(j)+ncorredorx_sup(j)>ncorxmax
+         ncorxmax=ncorredorx_inf(j)+ncorredorx_sup(j);
+     end
+     for k=1:ncorredorx_inf(j)-1
+         ycorr_inf(j,k)=yd_inf(j,k)+(yd_inf(j,k+1)-yd_inf(j,k))/2;
+     end
+     for k=1:ncorredorx_sup(j)-1
+         ycorr_sup(j,k)=yd_sup(j,k)-(-yd_sup(j,k+1)+yd_sup(j,k))/2;
+     end
+ end
+
+ ycorr_inf
+ ycorr_sup
+ ncorxmax
+
+ %uno tramos de corredores con bifurcaciones
+ for j=1:39
+     for k=1:ncorredorx_inf(j)
+         dmax=10000000;
+         for kk=1:ncorredorx_inf(j+1)
+             if abs(ycorr_inf(j,k)-ycorr_inf(j+1,kk))< dmax
+                 nlinkfw_inf(j,k)=kk;
+                 dmax=abs(ycorr_inf(j,k)-ycorr_inf(j+1,kk));
+             end
+         end
+     end
+ end
+ 
+ for j=1:39
+     for k=1:ncorredorx_sup(j)
+         dmax=10000000;
+         for kk=1:ncorredorx_sup(j+1)
+             if abs(ycorr_sup(j,k)-ycorr_sup(j+1,kk))< dmax
+                 nlinkfw_sup(j,k)=kk;
+                 dmax=abs(ycorr_sup(j,k)-ycorr_sup(j+1,kk));
+             end
+         end
+     end
+ end
+
+ for j=2:40
+     for k=1:ncorredorx_inf(j)
+         dmax=10000000;
+         for kk=1:ncorredorx_inf(j-1)
+             if abs(ycorr_inf(j,k)-ycorr_inf(j-1,kk))< dmax
+                 nlinkbw_inf(j,k)=kk;
+                 dmax=abs(ycorr_inf(j,k)-ycorr_inf(j-1,kk));
+             end
+         end
+     end
+ end
+
+ for j=2:40
+     for k=1:ncorredorx_sup(j)
+         dmax=10000000;
+         for kk=1:ncorredorx_sup(j-1)
+             if abs(ycorr_sup(j,k)-ycorr_sup(j-1,kk))< dmax
+                 nlinkbw_sup(j,k)=kk;
+                 dmax=abs(ycorr_sup(j,k)-ycorr_sup(j-1,kk)); % ycorr_sup(j,k)= coordenada y del punto k del corredor j en el cuadrante superior
+             end
+         end
+     end
+ end
+ 
+  
+ figure % Crear una nueva figura
+ hold on  % Permite superponer múltiples gráficos en la misma figura
+
+ % Definir límites y relación de aspecto
+ xlim([0, Dx]);
+ ylim([0, Dy]);
+ daspect([1,1,1]);
+
+ % Dibujar líneas y corredores
+ plot([0,Dx],[Dy,Dy],'k') % Dibuja una línea horizontal en la parte superior del cuadrante
+ plot([Dx,Dx],[0,Dy],'k') % Dibuja una línea vertical en el lado derecho del cuadrante
+ 
+ for j=1:40
+  for k=1:ncorredorx_inf(j)
+      plot([deltax*(j-1),deltax*(j)],[ycorr_inf(j,k),ycorr_inf(j,k)],'b')
+  end
+  for k=1:ncorredorx_sup(j)
+      plot([deltax*(j-1),deltax*(j)],[ycorr_sup(j,k),ycorr_sup(j,k)],'b')
+  end
+ end  
+ for j=2:40
+    for k=1:ncorredorx_inf(j)
+     plot([deltax*(j-1),deltax*(j-1)],[ycorr_inf(j-1,nlinkbw_inf(j,k)),ycorr_inf(j,k)],'c')
+    end 
+    for k=1:ncorredorx_sup(j)
+     plot([deltax*(j-1),deltax*(j-1)],[ycorr_sup(j-1,nlinkbw_sup(j,k)),ycorr_sup(j,k)],'c')
+    end 
+ end
+ for j=1:39
+    for k=1:ncorredorx_inf(j)
+     plot([deltax*(j),deltax*(j)],[ycorr_inf(j+1,nlinkfw_inf(j,k)),ycorr_inf(j,k)],'c')
+    end 
+    for k=1:ncorredorx_sup(j)
+     plot([deltax*(j),deltax*(j)],[ycorr_sup(j+1,nlinkfw_sup(j,k)),ycorr_sup(j,k)],'c')
+    end 
+ end
+ hold off
+    
+ 
+%ejes verticales izqdo
+ %______________________________________
+
+ xd_left=zeros(20,300);
+ ncorredory_left=zeros(300);
+ xcorr_left=zeros(20,300);
+ xnlinkfw_left=zeros(20,300);
+ xnlinkbw_left=zeros(20,300);
+ for i=1:40
+     xd_left(i,1)=0;
+     ncorredory_left(i)=1;
+     disw=0;
+     dmin=0;
+     for j=1:20
+         k=0;
+         while k==0
+             if  disw+(deltax*j-dmin)/sBx(i,j) <1
+               k=1;
+             else
+               k=0;
+               ncorredory_left(i)=ncorredory_left(i)+1;
+               
+               xd_left(i,ncorredory_left(i))=dmin+sBx(i,j)*(1-disw);
+               disw=0;
+              
+               dmin=xd_left(i,ncorredory_left(i));
+             end    
+         end
+         dmin=deltax*j;
+         disw=min(disw+deltax/sBx(i,j),disw+(deltax*j-xd_left(i,ncorredory_left(i)))/sBx(i,j));
+     end
+     %ajusto distancia último corredor 
+     if deltax*20-xd_left(i,ncorredory_left(i))>=0.5*sBx(i,j)
+         ncorredory_left(i)=ncorredory_left(i)+1;
+         xd_left(i,ncorredory_left(i))=deltax*20;
+     else
+         xd_left(i,ncorredory_left(i))=deltax*20;
+     end
+ end
+ %calculo la coordenada x del corredor que pasa por el medio de la zona de
+ %cobertura
+ ncorymax_left=0;
+ for i=1:40
+     if ncorredory_left(i)>ncorymax_left
+         ncorymax_left=ncorredory_left(i);
+     end
+     for k=1:ncorredory_left(i)-1
+         xcorr_left(i,k)=xd_left(i,k)+(xd_left(i,k+1)-xd_left(i,k))/2;
+     end
+     
+ end
+ %uno tramos de corredores con bifurcaciones
+ for i=1:39
+     for k=1:ncorredory_left(i)
+         dmax=10000000;
+         for kk=1:ncorredory_left(i+1)
+             if abs(xcorr_left(i,k)-xcorr_left(i+1,kk))< dmax
+                 xnlinkfw_left(i,k)=kk;
+                 dmax=abs(xcorr_left(i,k)-xcorr_left(i+1,kk));
+             end
+         end
+     end
+ end
+ 
+ for i=2:40
+     for k=1:ncorredory_left(i)
+         dmax=10000000;
+         for kk=1:ncorredory_left(i-1)
+             if abs(xcorr_left(i,k)-xcorr_left(i-1,kk))< dmax
+                 xnlinkbw_left(i,k)=kk;
+                 dmax=abs(xcorr_left(i,k)-xcorr_left(i-1,kk));
+             end
+         end
+     end
+ end
+ %ejes verticales derecho
+ %______________________________________
+
+ xd_rig=zeros(20,300);
+ xd_aux=zeros(20,300);
+ ncorredory_rig=zeros(300);
+ xcorr_rig=zeros(20,300);
+ xnlinkfw_rig=zeros(20,300);
+ xnlinkbw_rig=zeros(20,300);
+ for i=1:40
+     xd_rig(i,1)=0;
+     ncorredory_rig(i)=1;
+     disw=0;
+     dmin=0;
+     for jj=1:20
+         j=40-jj+1;
+         k=0;
+         while k==0
+             if  disw+(deltax*jj-dmin)/sBx(i,j) <1
+               k=1;
+             else
+               k=0;
+               ncorredory_rig(i)=ncorredory_rig(i)+1;
+               
+               xd_rig(i,ncorredory_rig(i))=dmin+sBx(i,j)*(1-disw);
+               disw=0;
+              
+               dmin=xd_rig(i,ncorredory_rig(i));
+             end    
+         end
+         dmin=deltax*jj;
+         disw=min(disw+deltax/sBx(i,j),disw+(deltax*jj-xd_rig(i,ncorredory_rig(i)))/sBx(i,j));
+     end
+     %ajusto distancia último corredor 
+     if deltax*20-xd_rig(i,ncorredory_rig(i))>=0.5*sBx(i,j)
+         ncorredory_rig(i)=ncorredory_rig(i)+1;
+         xd_rig(i,ncorredory_rig(i))=deltax*20;
+     else
+         xd_rig(i,ncorredory_rig(i))=deltax*20;
+     end
+ end
+ for i=1:40
+     for kkk=1:ncorredory_rig(i)
+         xd_aux(i,kkk)=xd_rig(i,kkk);
+         xd_rig(i,kkk)=0;
+     end
+     for kkk=1:ncorredory_rig(i)
+         xd_rig(i,kkk)=deltax*40-xd_aux(i,kkk);
+     end
+ end
+  %calculo la coordenada x del corredor que pasa por el medio de la zona de
+ %cobertura
+ ncorymax=0;
+ for i=1:40
+     if ncorredory_left(i)+ncorredory_rig(i)>ncorymax
+         ncorymax=ncorredory_left(i)+ncorredory_rig(i);
+     end
+     for k=1:ncorredory_left(i)-1
+         xcorr_left(i,k)=xd_left(i,k)+(xd_left(i,k+1)-xd_left(i,k))/2;
+     end
+     for k=1:ncorredory_rig(i)-1
+         xcorr_rig(i,k)=xd_rig(i,k)-(-xd_rig(i,k+1)+xd_rig(i,k))/2;
+     end
+ end
+ %uno tramos de corredores con bifurcaciones
+ for i=1:39
+     for k=1:ncorredory_left(i)
+         dmax=10000000;
+         for kk=1:ncorredory_left(i+1)
+             if abs(xcorr_left(i,k)-xcorr_left(i+1,kk))< dmax
+                 xnlinkfw_left(i,k)=kk;
+                 dmax=abs(xcorr_left(i,k)-xcorr_left(i+1,kk));
+             end
+         end
+     end
+     for k=1:ncorredory_rig(i)
+         dmax=10000000;
+         for kk=1:ncorredory_rig(i+1)
+             if abs(xcorr_rig(i,k)-xcorr_rig(i+1,kk))< dmax
+                 xnlinkfw_rig(i,k)=kk;
+                 dmax=abs(xcorr_rig(i,k)-xcorr_rig(i+1,kk));
+             end
+         end
+     end
+ end
+ 
+ for i=2:40
+     for k=1:ncorredory_left(i)
+         dmax=10000000;
+         for kk=1:ncorredory_left(i-1)
+             if abs(xcorr_left(i,k)-xcorr_left(i-1,kk))< dmax
+                 xnlinkbw_left(i,k)=kk;
+                 dmax=abs(xcorr_left(i,k)-xcorr_left(i-1,kk));
+             end
+         end
+     end
+     for k=1:ncorredory_rig(i)
+         dmax=10000000;
+         for kk=1:ncorredory_rig(i-1)
+             if abs(xcorr_rig(i,k)-xcorr_rig(i-1,kk))< dmax
+                 xnlinkbw_rig(i,k)=kk;
+                 dmax=abs(xcorr_rig(i,k)-xcorr_rig(i-1,kk));
+             end
+         end
+     end
+ end
+ xcorr_left
+ xcorr_rig
+ ncorymax
+ 
+ figure 
+ hold on
+
+ % Definir límites y relación de aspecto
+ xlim([0, Dx]);
+ ylim([0, Dy]);
+ daspect([1,1,1]);
+
+% Dibujar líneas y corredores
+ plot([0,Dx],[Dy,Dy],'k')
+ plot([Dx,Dx],[0,Dy],'k')
+
+ for i=1:40
+  for k=1:ncorredory_left(i)
+      plot([xcorr_left(i,k),xcorr_left(i,k)],[Deltay*(i-1),Deltay*(i)],'r')
+  end
+  for k=1:ncorredory_rig(i)
+      plot([xcorr_rig(i,k),xcorr_rig(i,k)],[Deltay*(i-1),Deltay*(i)],'r')
+  end
+ end  
+ for i=2:40
+    for k=1:ncorredory_left(i)
+     plot([xcorr_left(i-1,xnlinkbw_left(i,k)),xcorr_left(i,k)],[Deltay*(i-1),Deltay*(i-1)],'m')
+    end 
+    for k=1:ncorredory_rig(i)
+     plot([xcorr_rig(i-1,xnlinkbw_rig(i,k)),xcorr_rig(i,k)],[Deltay*(i-1),Deltay*(i-1)],'m')
+    end 
+ end
+ for i=1:39
+    for k=1:ncorredory_left(i)
+     plot([xcorr_left(i+1,xnlinkfw_left(i,k)),xcorr_left(i,k)],[Deltay*(i),Deltay*(i)],'m')
+    end 
+    for k=1:ncorredory_rig(i)
+     plot([xcorr_rig(i+1,xnlinkfw_rig(i,k)),xcorr_rig(i,k)],[Deltay*(i),Deltay*(i)],'m')
+    end 
+ end
+ hold off
+
+ %GENERO GRÁFICO CONJUNTO
+ figure 
+ hold on
+
+ % Definir límites y relación de aspecto
+ xlim([0, Dx]);
+ ylim([0, Dy]);
+ daspect([1,1,1]);
+
+% Dibujar líneas y corredores
+ plot([0,Dx],[Dy,Dy],'k')
+ plot([Dx,Dx],[0,Dy],'k')
+ for i=1:40
+  for k=1:ncorredory_left(i)
+      plot([xcorr_left(i,k),xcorr_left(i,k)],[Deltay*(i-1),Deltay*(i)],'r')
+  end
+    for k=1:ncorredory_rig(i)
+      plot([xcorr_rig(i,k),xcorr_rig(i,k)],[Deltay*(i-1),Deltay*(i)],'r')
+    end
+ end  
+ for i=2:40
+    for k=1:ncorredory_left(i)
+     plot([xcorr_left(i-1,xnlinkbw_left(i,k)),xcorr_left(i,k)],[Deltay*(i-1),Deltay*(i-1)],'m')
+    end 
+    for k=1:ncorredory_rig(i)
+     plot([xcorr_rig(i-1,xnlinkbw_rig(i,k)),xcorr_rig(i,k)],[Deltay*(i-1),Deltay*(i-1)],'m')
+    end 
+ end
+ for i=1:39
+    for k=1:ncorredory_left(i)
+     plot([xcorr_left(i+1,xnlinkfw_left(i,k)),xcorr_left(i,k)],[Deltay*(i),Deltay*(i)],'m')
+    end 
+    for k=1:ncorredory_rig(i)
+     plot([xcorr_rig(i+1,xnlinkfw_rig(i,k)),xcorr_rig(i,k)],[Deltay*(i),Deltay*(i)],'m')
+    end 
+ end
+ for j=1:40
+  for k=1:ncorredorx_inf(j)
+      plot([deltax*(j-1),deltax*(j)],[ycorr_inf(j,k),ycorr_inf(j,k)],'b')
+  end
+  for k=1:ncorredorx_sup(j)
+      plot([deltax*(j-1),deltax*(j)],[ycorr_sup(j,k),ycorr_sup(j,k)],'b')
+  end
+ end  
+ for j=2:40
+    for k=1:ncorredorx_inf(j)
+     plot([deltax*(j-1),deltax*(j-1)],[ycorr_inf(j-1,nlinkbw_inf(j,k)),ycorr_inf(j,k)],'c')
+    end 
+    for k=1:ncorredorx_sup(j)
+     plot([deltax*(j-1),deltax*(j-1)],[ycorr_sup(j-1,nlinkbw_sup(j,k)),ycorr_sup(j,k)],'c')
+    end 
+ end
+ for j=1:39
+    for k=1:ncorredorx_sup(j)
+     plot([deltax*(j),deltax*(j)],[ycorr_sup(j+1,nlinkfw_sup(j,k)),ycorr_sup(j,k)],'c')
+    end 
+ end
+ hold off
 
